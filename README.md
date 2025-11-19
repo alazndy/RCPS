@@ -2,76 +2,151 @@
 
 Bu proje, bir ESP32 mikrodenetleyici kullanarak bir CAN BUS radarından gelen verileri işleyen ve sonuçları bir Nextion HMI ekranda görselleştiren gelişmiş bir radar sistemidir. Sistem, hedefleri mesafelerine ve konumlarına göre sınıflandırır, görsel ve sesli uyarılar üretir ve kullanıcı tarafından yapılandırılabilir ayarlara sahiptir.
 
-**Versiyon:** 3.5.0
+**Versiyon:** v3.7.0 (Nextion Auth & Smart Parser)
 
 ---
 
 ## 🌟 Temel Özellikler
 
-- **CAN BUS Entegrasyonu:** Radar sensöründen gelen verileri `TWAI` (Two-Wire Automotive Interface) sürücüsü aracılığıyla alır ve işler.
-- **Nextion HMI Arayüzü:** Algılanan hedefleri, tehlike bölgelerini ve araç konumunu dinamik olarak bir Nextion ekranda gösterir. Ayarlar için dokunmatik bir arayüz sunar.
-- **Dinamik Görselleştirme:** "Auto Zoom" özelliği sayesinde, hedefin mesafesine göre ekranın yanal görüş mesafesini otomatik olarak ayarlar (L1-L4 kademeleri).
-- **Kademeli Sesli Alarm:** Hedefin yakınlığına göre farklı aralıklarla (sarı, turuncu, kırmızı bölge) veya sürekli (çok yakın) ses çıkaran bir buzzer ile sesli uyarı sağlar.
-- **Kalıcı Ayarlar (EEPROM):** Uyarı/tehlike bölgeleri, araç genişliği, yan boşluklar ve kullanıcı şifresi gibi ayarlar EEPROM'a kaydedilerek güç kesintilerinde bile korunur.
-- **Gelişmiş Hata Ayıklama:** Kod, `CAN`, `Nextion`, `Radar`, `Buzzer` ve `EEPROM` modülleri için ayrı ayrı etkinleştirilebilen bir hata ayıklama sistemine sahiptir. Bu, sorun gidermeyi kolaylaştırır.
-- **Şifre Koruması:** Ayarlar menüsüne erişim şifre ile korunmaktadır.
+-   **CAN BUS Entegrasyonu:** Radar sensöründen gelen verileri `TWAI` (Two-Wire Automotive Interface) sürücüsü aracılığıyla alır ve işler.
+    -   **Mesaj Filtreleme:** Belirli CAN ID aralığındaki (`0x310` - `0x38F`) mesajları dinler.
+    -   **Veri Çözümleme:** Gelen CAN verisinden polar mesafe, açı, ileri ve yanal mesafeleri (metre cinsinden) çıkarır.
+-   **Nextion HMI Arayüzü:** Algılanan hedefleri, tehlike bölgelerini ve araç konumunu dinamik olarak bir Nextion ekranda gösterir. Ayarlar için dokunmatik bir arayüz sunar.
+    -   **Akıllı Ayrıştırıcı:** Nextion'dan gelen komutları `strstr` kullanarak güvenilir bir şekilde ayrıştırır, "Touch Event" gibi istenmeyen verileri göz ardı eder.
+    -   **Nextion Kimlik Doğrulaması:** Şifre kontrolü ve ayar menüsü erişimi tamamen Nextion HMI tarafından yönetilir. ESP32 sadece ayar komutlarını işler.
+-   **Dinamik Görselleştirme:**
+    -   **Otomatik Zoom:** "Auto Zoom" özelliği sayesinde, hedefin mesafesine göre ekranın yanal görüş mesafesini otomatik olarak ayarlar (10m, 8m, 6m, 4m kademeleri).
+    -   **Sabit Ölçekleme:** X ve Y eksenleri eşit ölçeklenerek daha doğru bir görsel temsil sağlar.
+-   **Kademeli Sesli Alarm:** Hedefin yakınlığına göre farklı aralıklarla (sarı, turuncu, kırmızı bölge) veya sürekli (çok yakın) ses çıkaran bir buzzer ile sesli uyarı sağlar.
+    -   **Master Ses Kontrolü:** Sesli alarm kapatıldığında buzzer donanımsal olarak anında susturulur.
+-   **Kalıcı Ayarlar (EEPROM):** Uyarı/tehlike bölgeleri, araç genişliği, yan boşluklar ve maksimum tarama genişliği gibi ayarlar ESP32'nin dahili EEPROM'una kaydedilerek güç kesintilerinde bile korunur.
+-   **Gelişmiş Hata Ayıklama:** Kod, `CAN`, `Nextion`, `Radar`, `Buzzer` ve `EEPROM` modülleri için ayrı ayrı etkinleştirilebilen bir hata ayıklama sistemine sahiptir. Bu, sorun gidermeyi kolaylaştırır.
 
 ---
 
 ## 🛠️ Donanım ve Yazılım Gereksinimleri
 
 ### Donanım
-- **Mikrodenetleyici:** ESP32 Geliştirme Kartı (`esp32dev`)
-- **Ekran:** Nextion HMI Dokunmatik Ekran
-- **Radar Sensörü:** CAN BUS (TWAI) arayüzüne sahip bir radar modülü.
-- **CAN Alıcı-Verici:** ESP32 ile CAN BUS arasına bağlamak için bir CAN alıcı-verici modülü (örn: TJA1050, SN65HVD230).
-- **Buzzer:** Sesli uyarılar için aktif veya pasif bir buzzer.
-- **Bağlantı Kabloları**
+-   **Mikrodenetleyici:** ESP32 Geliştirme Kartı (Örn: ESP32-DevKitC, `esp32dev` PlatformIO kart tanımı)
+-   **Ekran:** Nextion HMI Dokunmatik Ekran (Örn: 3.5 inç veya 4.3 inç)
+-   **Radar Sensörü:** CAN BUS (TWAI) arayüzüne sahip bir radar modülü (Örn: Otomotiv radar sensörleri).
+-   **CAN Alıcı-Verici:** ESP32'nin 3.3V mantık seviyelerini CAN Bus'ın fiziksel katmanına dönüştürmek için bir CAN alıcı-verici modülü (Örn: SN65HVD230, TJA1050).
+-   **Buzzer:** Sesli uyarılar için aktif veya pasif bir buzzer. (Pasif buzzer kullanılıyorsa, basit bir transistör devresi ile kontrol edilmesi önerilir.)
+-   **Güç Kaynağı:** ESP32 ve diğer bileşenler için uygun bir 5V güç kaynağı.
+-   **Bağlantı Kabloları**
 
 ### Yazılım
-- **Geliştirme Ortamı:** [PlatformIO IDE](https://platformio.org/)
-- **Framework:** [Arduino](https://www.arduino.cc/)
+-   **Geliştirme Ortamı:** [PlatformIO IDE](https://platformio.org/) (VS Code eklentisi önerilir)
+-   **Framework:** [Arduino Framework for ESP32](https://docs.espressif.com/projects/arduino-esp32/en/latest/)
+-   **Gerekli Kütüphaneler:**
+    -   `driver/gpio.h`, `driver/twai.h` (ESP-IDF'in bir parçası, Arduino ESP32 çekirdeği ile gelir)
+    -   `<math.h>` (Standart C kütüphanesi)
+    -   `<HardwareSerial.h>` (Arduino çekirdeği ile gelir)
+    -   `<EEPROM.h>` (Arduino çekirdeği ile gelir)
+
+---
+
+## 🔌 Bağlantı Şemaları (Metin Tabanlı)
+
+**ÖNEMLİ NOT:** Aşağıdaki bağlantı şemaları metin tabanlıdır. Daha iyi bir görsel rehberlik için, projenizi kurarken bu şemaları referans alarak kendi görsel bağlantı diyagramlarınızı oluşturmanız veya ilgili donanım belgelerine başvurmanız şiddetle önerilir.
+
+#### 1. ESP32 ile CAN Transceiver (Örn: SN65HVD230, TJA1050) Bağlantısı
+
+CAN Transceiver modülü, ESP32'nin TWAI (CAN) sinyallerini fiziksel CAN Bus hattına uygun hale getirir.
+
+| ESP32 Pin Adı | ESP32 GPIO Numarası | CAN Transceiver Pin Adı | Açıklama |
+| :------------ | :------------------ | :---------------------- | :------------------------------------------- |
+| `CAN_TX` | `GPIO_NUM_5` | `TX` | CAN Veri Hattı (Transmit) |
+| `CAN_RX` | `GPIO_NUM_4` | `RX` | CAN Veri Hattı (Receive) |
+| `GND` | `GND` | `GND` | Toprak Bağlantısı |
+| `3V3` | `3V3` | `VCC` | Güç Bağlantısı (3.3V) |
+| `CAN_H` | N/A | `CAN_H` | CAN Bus Yüksek Hattı (Harici CAN cihazlarına) |
+| `CAN_L` | N/A | `CAN_L` | CAN Bus Düşük Hattı (Harici CAN cihazlarına) |
+
+#### 2. ESP32 ile Nextion HMI Ekran Bağlantısı
+
+Nextion ekran, ESP32 ile UART (Seri Haberleşme) üzerinden iletişim kurar. Projede `Serial2` kullanılmıştır.
+
+| ESP32 Pin Adı | ESP32 GPIO Numarası | Nextion Ekran Pin Adı | Açıklama |
+| :------------ | :------------------ | :-------------------- | :------------------------------------------- |
+| `RX2` | `GPIO_NUM_16` | `TX` | ESP32'den Nextion'a Veri Gönderimi |
+| `TX2` | `GPIO_NUM_17` | `RX` | Nextion'dan ESP32'ye Veri Alımı |
+| `GND` | `GND` | `GND` | Toprak Bağlantısı |
+| `5V` | `5V` | `5V` | Güç Bağlantısı (Nextion genellikle 5V ile çalışır) |
+
+#### 3. ESP32 ile Buzzer Bağlantısı
+
+Buzzer, ESP32'nin dijital bir çıkış pini üzerinden kontrol edilir.
+
+| ESP32 Pin Adı | ESP32 GPIO Numarası | Buzzer Pin Adı | Açıklama |
+| :------------ | :------------------ | :------------- | :------------------------------------------- |
+| `BUZZER_PIN` | `GPIO_NUM_25` | `+` (Pozitif) | Buzzer'ın pozitif bacağına bağlanır |
+| `GND` | `GND` | `-` (Negatif) | Buzzer'ın negatif bacağına bağlanır |
+
+**Not:** Pasif buzzer kullanılıyorsa, ses üretmek için PWM sinyali gerekebilir. Bu projede buzzer'ın sadece AÇIK/KAPALI durumları kontrol edilmektedir, bu da aktif buzzer veya basit bir transistör devresi ile pasif buzzer kontrolü için uygundur.
 
 ---
 
 ## ⚙️ Proje Yapılandırması ve Kurulum
 
 1.  **PlatformIO Projesi:** Bu proje bir PlatformIO projesidir. PlatformIO CLI veya VS Code eklentisini kullanarak projeyi açın.
-2.  **Kütüphaneler:** Gerekli tüm kütüphaneler (`driver/gpio`, `driver/twai`, `EEPROM`, vb.) ESP32 için Arduino çekirdeği ile birlikte standart olarak gelir. Ek bir kütüphane kurulumu gerekmez.
-3.  **Pin Bağlantıları:** `src/main.cpp` dosyasında tanımlanan pin bağlantılarını kendi donanımınıza göre yapın:
-    - **CAN BUS:**
-        - `CAN_TX_PIN`: `GPIO_NUM_5`
-        - `CAN_RX_PIN`: `GPIO_NUM_4`
-    - **Nextion Ekran (Serial2):**
-        - `TX`: `GPIO_NUM_17`
-        - `RX`: `GPIO_NUM_16`
-    - **Buzzer:**
-        - `BUZZER_PIN`: `25`
+2.  **Donanım Bağlantıları:** Yukarıdaki "Bağlantı Şemaları" bölümünü referans alarak tüm donanım bileşenlerini ESP32'ye doğru şekilde bağlayın.
+3.  **Nextion HMI Dosyası:** `RCPS1SA.HMI` dosyasını Nextion editörü aracılığıyla Nextion ekranınıza yükleyin. Bu dosya, kullanıcı arayüzünü ve şifre doğrulama mantığını içerir.
 4.  **Derleme ve Yükleme:** PlatformIO arayüzünü kullanarak projeyi derleyin (`Build`) ve ESP32 kartına yükleyin (`Upload`).
 
 ---
 
 ## 🚀 Kullanım
 
-- **İlk Başlatma:** Cihaz ilk kez başlatıldığında, EEPROM'da geçerli bir ayar bulamazsa varsayılan ayarları yükler.
-- **Radar Ekranı:** Ana ekran, algılanan hedefleri aracınıza göre konumlandırır. Hedefin rengi tehlike seviyesini belirtir (Yeşil -> Sarı -> Turuncu -> Kırmızı).
-- **Ayarlar Menüsü:** Ekranda ayarlar menüsüne girmek için ilgili butona dokunun. Varsayılan şifre: `1234`.
-- **Ayarlar:**
-    - **Sayfa 1 (Bölgeler):** Uyarı ve Tehlike bölgelerinin mesafesini ayarlayın.
-    - **Sayfa 2 (Araç):** Aracın yan boşluklarını, gerçek genişliğini ve maksimum yanal tarama genişliğini ayarlayın.
-    - **Sayfa 3 (Seçenekler):** Otomatik Zoom ve Sesli Alarm özelliklerini açıp kapatın.
-    - Şifrenizi değiştirebilir ve tüm ayarları varsayılana sıfırlayabilirsiniz.
+-   **İlk Başlatma:** Cihaz ilk kez başlatıldığında veya EEPROM'da geçerli ayarlar bulunmadığında, varsayılan ayarlar otomatik olarak yüklenir ve EEPROM'a kaydedilir.
+-   **Radar Ekranı:** Ana ekran, algılanan hedefleri aracınıza göre konumlandırır.
+    -   **Hedef Görselleştirme:** Hedefin rengi tehlike seviyesini belirtir (Yeşil -> Sarı -> Turuncu -> Kırmızı).
+    -   **Metin Bilgileri:** Ekranın üst kısmında mesafe, açı, X ve Y koordinatları gibi anlık hedef bilgileri gösterilir.
+-   **Ayarlar Menüsü:**
+    -   Nextion ekranındaki ilgili butona dokunarak ayarlar menüsüne erişin.
+    -   **Şifre Doğrulama:** Ayarlar menüsüne erişim Nextion HMI tarafından yönetilen bir şifre ile korunmaktadır. Varsayılan şifre `1234`'tür.
+    -   **Ayarlar Sayfaları:**
+        -   **Sayfa 1 (Bölgeler):** Radar için **Uyarı Bölgesi** ve **Tehlike Bölgesi** mesafelerini (metre cinsinden) ayarlayın.
+        -   **Sayfa 2 (Araç Boyutları):** Aracınızın **Yan Boşluklarını**, **Gerçek Genişliğini** ve radarın algılayabileceği **Maksimum Yanal Tarama Genişliğini** (metre cinsinden) ayarlayın.
+        -   **Sayfa 3 (Sistem Seçenekleri):** **Otomatik Zoom** özelliğini (hedef mesafesine göre ekran ölçeğini ayarlar) ve **Sesli Alarm** özelliğini açıp kapatın.
+    -   **Şifre Değiştirme:** Nextion arayüzü üzerinden şifrenizi değiştirebilirsiniz.
+    -   **Varsayılanlara Sıfırlama:** Tüm ayarları fabrika varsayılan değerlerine döndürebilirsiniz.
 
 ---
 
 ## 👨‍💻 Kod Yapısı
 
-Kod, daha iyi okunabilirlik ve yönetim için bölümlere ayrılmıştır:
+Kod, daha iyi okunabilirlik ve yönetim için mantıksal bölümlere ayrılmıştır:
 
-- **BÖLÜM 1: Kütüphaneler:** Gerekli kütüphaneler dahil edilir.
-- **BÖLÜM 2: Ayarlar ve Sabitler:** Pin tanımlamaları, hata ayıklama anahtarları, EEPROM adresleri ve varsayılan değerler burada bulunur.
-- **BÖLÜM 3: Global Nesneler ve Deklarasyonlar:** Global değişkenler ve fonksiyon prototipleri tanımlanır.
-- **BÖLÜM 4: Ana Program (setup ve loop):** `setup()` fonksiyonu donanımı ve servisleri başlatır. `loop()` fonksiyonu sürekli olarak Nextion ve CAN verilerini dinler.
-- **BÖLÜM 5: Haberleşme Fonksiyonları:** Nextion ekranından gelen komutları işler ve ekrana komut gönderir.
-- **BÖLÜM 6: Radar Mantığı ve Görselleştirme:** CAN verisini işler, tehlike seviyesini belirler, piksel hesaplamalarını yapar ve ekranı günceller.
-- **BÖLÜM 7: EEPROM Yönetimi:** Ayarları kalıcı hafızaya kaydeder, okur ve varsayılanlara sıfırlar.
+-   **PROJE KİMLİĞİ:** Proje adı, versiyon, tarih ve sürüm notları gibi genel bilgiler.
+-   **DEBUG AYARLARI:** `DEBUG_CAN`, `DEBUG_NEXTION`, `DEBUG_RADAR`, `DEBUG_BUZZER`, `DEBUG_EEPROM` makroları ile her modül için ayrı ayrı hata ayıklama mesajlarını etkinleştirme/devre dışı bırakma.
+-   **DONANIM VE SABİTLER:**
+    -   **Pin Tanımlamaları:** `CAN_TX_PIN`, `CAN_RX_PIN`, `BUZZER_PIN` gibi donanım pinlerinin GPIO numaraları.
+    -   **Seri Haberleşme Ayarları:** `SERIAL_MONITOR_BAUD`, `NEXTION_BAUD` gibi baud hızları.
+    -   **EEPROM Ayarları:** `EEPROM_SIZE`, `EEPROM_MAGIC_KEY` ve ayarların EEPROM'daki adresleri (`ADDR_WARN_ZONE`, `ADDR_DANGER_ZONE` vb.).
+    -   **Varsayılan Ayarlar:** `DEFAULT_WARNING_ZONE_M`, `DEFAULT_VEHICLE_WIDTH_M` gibi başlangıç değerleri.
+    -   **Ekran Özellikleri:** `SCREEN_WIDTH_PX`, `SCREEN_HEIGHT_PX`, `TARGET_OBJECT_SIZE_PX` gibi Nextion ekran boyutları ve görsel sabitler.
+    -   **Nextion Resim ID'leri:** Farklı tehlike seviyeleri için kullanılan arka plan resimlerinin ID'leri.
+    -   **Renkler:** Nextion ekranında kullanılan renk kodları.
+    -   **Buzzer Ayarları:** `SOLID_TONE_DISTANCE_M`, `BEEP_ON_DURATION_MS`, `BEEP_INTERVAL_YELLOW_MS` gibi buzzer davranışını kontrol eden sabitler.
+-   **GLOBAL DEĞİŞKENLER:** `HardwareSerial SerialNextion`, `targetVisible`, `rxBuffer` gibi global nesneler ve ayar değişkenleri (`warningZone_m`, `autoZoom_enabled` vb.).
+-   **PROTOTİPLER:** Tüm fonksiyonların prototip bildirimleri.
+-   **SETUP:** `setup()` fonksiyonu, pinleri ayarlar, seri haberleşmeyi başlatır, EEPROM'dan ayarları yükler ve TWAI (CAN) sürücüsünü başlatır.
+-   **LOOP:** `loop()` fonksiyonu, sürekli olarak Nextion'dan gelen komutları işler (`handleNextionInput`), CAN mesajlarını dinler (`twai_receive`, `handleDetection`), hedef kaybolduğunda ekranı temizler (`clearDetection`) ve buzzer'ı yönetir (`handleBuzzer`).
+-   **HABERLEŞME (Nextion -> ESP32):**
+    -   `sendCommand(String cmd)`: Nextion ekrana komut göndermek için kullanılır.
+    -   `handleNextionInput()`: Nextion'dan gelen verileri okur, `strstr` ile komutları ayrıştırır ve `SAVE1`, `SAVE2`, `SAVE3`, `RESETALL` gibi ayar komutlarını işler.
+-   **RADAR GÖRSELLEŞTİRME MOTORU:**
+    -   `handleDetection(const twai_message_t& msg)`: Gelen CAN mesajını işler, polar ve kartezyen koordinatları hesaplar, otomatik zoom mantığını uygular, buzzer davranışını belirler ve Nextion ekranını günceller.
+    -   `updateVehicleDisplay(float currentMaxGridXMeters)`: Araç görselini ve genişliğini ekranda günceller.
+    -   `clearDetection()`: Hedef kaybolduğunda ekranı temizler ve varsayılan duruma getirir.
+    -   `updateTargetDisplay(int x, int y, int color)`: Algılanan hedefin konumunu ve rengini ekranda günceller.
+    -   `updateTextDisplays(float radius, int angle, float x_m, float y_m)`: Mesafe, açı, X ve Y koordinatları gibi metin bilgilerini ekranda günceller.
+    -   `handleBuzzer()`: Buzzer'ın sesli alarm mantığını yönetir (sürekli ton, aralıklı bip sesleri).
+-   **EEPROM:**
+    -   `loadSettingsFromEEPROM()`: EEPROM'dan kaydedilmiş ayarları yükler veya geçerli ayar bulunamazsa varsayılanları yükler.
+    -   `saveSettingsToEEPROM()`: Mevcut ayarları EEPROM'a kaydeder.
+    -   `resetToDefaults()`: Tüm ayarları varsayılan değerlerine sıfırlar ve EEPROM'a kaydeder.
+    -   `sendSettingsToNextion()`: Mevcut ayarları Nextion ekrana göndererek arayüzdeki değerleri günceller.
+
+---
