@@ -96,6 +96,20 @@ Buzzer, ESP32'nin dijital bir çıkış pini üzerinden kontrol edilir.
 
 ---
 
+## 🔗 İlgili Simülasyon Projeleri
+
+Bu projenin geliştirilmesi ve test edilmesi süreçlerinde faydalanabileceğiniz veya farklı amaçlarla kullanabileceğiniz ilişkili simülasyon projeleri aşağıda listelenmiştir:
+
+-   **Radar Sensör Simülasyonu (bs9100tsim):**
+    -   CAN BUS radar sensöründen gelen verileri (`0x310` - `0x38F` ID aralığında) simüle etmek için kullanılabilir. Bu simülatör, gerçek bir sensör olmadan projenin radar veri işleme ve görselleştirme bölümlerini test etmenize olanak tanır.
+    -   [GitHub Deposu: alazndy/bs9100tsim](https://github.com/alazndy/bs9100tsim)
+
+-   **Nextion Ekran Simülasyonu (RCPS-Sim):**
+    -   Nextion HMI ekranının davranışını ve ESP32 ile olan seri iletişimini simüle etmek için tasarlanmıştır. Gerçek bir Nextion ekranına ihtiyaç duymadan, grafik arayüz güncellemelerini ve ayar komutlarının işlenmesini test edebilirsiniz.
+    -   [GitHub Deposu: alazndy/RCPS-Sim](https://github.com/alazndy/RCPS-Sim)
+
+---
+
 ## 🚀 Kullanım
 
 -   **İlk Başlatma:** Cihaz ilk kez başlatıldığında veya EEPROM'da geçerli ayarlar bulunmadığında, varsayılan ayarlar otomatik olarak yüklenir ve EEPROM'a kaydedilir.
@@ -146,7 +160,7 @@ Kod, daha iyi okunabilirlik ve yönetim için mantıksal bölümlere ayrılmış
 -   **EEPROM:**
     -   `loadSettingsFromEEPROM()`: EEPROM'dan kaydedilmiş ayarları yükler veya geçerli ayar bulunamazsa varsayılanları yükler.
     -   `saveSettingsToEEPROM()`: Mevcut ayarları EEPROM'a kaydeder.
-    -   `resetToDefaults()`: Tüm ayarları varsayılan değerlerine sıfırlar ve EEPROM'a kaydeder.
+    -   `resetToDefaults()`: Tüm ayarları fabrika varsayılan değerlerine döndürür ve EEPROM'a kaydeder.
     -   `sendSettingsToNextion()`: Mevcut ayarları Nextion ekrana göndererek arayüzdeki değerleri günceller.
 
 ---
