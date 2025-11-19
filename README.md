@@ -101,11 +101,13 @@ Buzzer, ESP32'nin dijital bir çıkış pini üzerinden kontrol edilir.
 Bu projenin geliştirilmesi ve test edilmesi süreçlerinde faydalanabileceğiniz veya farklı amaçlarla kullanabileceğiniz ilişkili simülasyon projeleri aşağıda listelenmiştir:
 
 -   **Radar Sensör Simülasyonu (bs9100tsim):**
-    -   CAN BUS radar sensöründen gelen verileri (`0x310` - `0x38F` ID aralığında) simüle etmek için kullanılabilir. Bu simülatör, gerçek bir sensör olmadan projenin radar veri işleme ve görselleştirme bölümlerini test etmenize olanak tanır.
+    -   **Amaç:** Gerçek bir CAN BUS radar sensörünün davranışını taklit ederek, ESP32 radar sistemine veri sağlamak. Bu sayede, fiziksel bir sensör donanımına ihtiyaç duymadan projenin radar veri işleme, görselleştirme ve sesli uyarı mantığını geliştirebilir ve test edebilirsiniz.
+    -   **İşlevsellik:** Belirli CAN ID aralığında (`0x310` - `0x38F`) simüle edilmiş radar verileri (mesafe, açı, X/Y koordinatları) üretir ve CAN Bus üzerinden yayınlar. Bu veriler, ana ESP32 projesi tarafından alınır ve işlenir.
     -   [GitHub Deposu: alazndy/bs9100tsim](https://github.com/alazndy/bs9100tsim)
 
 -   **Nextion Ekran Simülasyonu (RCPS-Sim):**
-    -   Nextion HMI ekranının davranışını ve ESP32 ile olan seri iletişimini simüle etmek için tasarlanmıştır. Gerçek bir Nextion ekranına ihtiyaç duymadan, grafik arayüz güncellemelerini ve ayar komutlarının işlenmesini test edebilirsiniz.
+    -   **Amaç:** Nextion HMI ekranının kullanıcı arayüzünü ve ESP32 ile olan seri iletişimini bilgisayar ortamında simüle etmek. Bu, gerçek bir Nextion ekranına sahip olmadan veya donanım bağlantılarıyla uğraşmadan, grafik arayüz güncellemelerini ve ayar komutlarının işlenmesini test etmenizi sağlar.
+    -   **İşlevsellik:** ESP32'den gelen Nextion komutlarını yorumlar ve sanal bir arayüzde görselleştirir. Ayrıca, kullanıcı etkileşimlerini (buton basmaları, ayar değişiklikleri) simüle ederek ESP32'ye geri komutlar gönderebilir.
     -   [GitHub Deposu: alazndy/RCPS-Sim](https://github.com/alazndy/RCPS-Sim)
 
 ---
@@ -155,7 +157,7 @@ Kod, daha iyi okunabilirlik ve yönetim için mantıksal bölümlere ayrılmış
     -   `updateVehicleDisplay(float currentMaxGridXMeters)`: Araç görselini ve genişliğini ekranda günceller.
     -   `clearDetection()`: Hedef kaybolduğunda ekranı temizler ve varsayılan duruma getirir.
     -   `updateTargetDisplay(int x, int y, int color)`: Algılanan hedefin konumunu ve rengini ekranda günceller.
-    -   `updateTextDisplays(float radius, int angle, float x_m, float y_m)`: Mesafe, açı, X ve Y koordinatları gibi metin bilgilerini ekranda günceller.
+    -   `updateTextDisplays(float radius, int angle, float x_m, y_m)`: Mesafe, açı, X ve Y koordinatları gibi metin bilgilerini ekranda günceller.
     -   `handleBuzzer()`: Buzzer'ın sesli alarm mantığını yönetir (sürekli ton, aralıklı bip sesleri).
 -   **EEPROM:**
     -   `loadSettingsFromEEPROM()`: EEPROM'dan kaydedilmiş ayarları yükler veya geçerli ayar bulunamazsa varsayılanları yükler.
