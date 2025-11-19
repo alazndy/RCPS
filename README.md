@@ -35,6 +35,56 @@ Bu proje, bir ESP32 mikrodenetleyici kullanarak bir CAN BUS radarından gelen ve
 -   **Güç Kaynağı:** ESP32 ve diğer bileşenler için uygun bir 5V güç kaynağı.
 -   **Bağlantı Kabloları**
 
+#### Bileşen Detayları ve Özellikleri
+
+Projede kullanılan temel donanım bileşenlerinin detaylı özellikleri aşağıda verilmiştir:
+
+*   **ESP32 Mikrodenetleyici:**
+    *   **İşlemci:** Tensilica Xtensa Dual-Core 32-bit LX6 mikroişlemci
+    *   **Saat Hızı:** 240 MHz'e kadar
+    *   **Bağlantı:** Entegre Wi-Fi (802.11 b/g/n) ve Bluetooth (v4.2 BR/EDR ve BLE)
+    *   **Bellek:** 520 KB SRAM, 4MB Flash (genellikle)
+    *   **GPIO:** Çok sayıda çok amaçlı GPIO pini, ADC, DAC, I2C, SPI, UART, TWAI (CAN) desteği.
+    *   **Güç:** 2.3V - 3.6V çalışma voltajı (genellikle 3.3V ile beslenir)
+
+*   **Nextion HMI Dokunmatik Ekran:**
+    *   **Tip:** Akıllı Seri HMI (Human Machine Interface) Dokunmatik Ekran
+    *   **Boyutlar:** Çeşitli boyutlarda mevcuttur (örn: 3.5", 4.3", 5.0", 7.0"). Projede kullanılan HMI dosyası ekran çözünürlüğüne göre optimize edilmelidir.
+    *   **İletişim:** UART Seri Port (TTL) üzerinden ESP32 ile iletişim kurar (9600 baud).
+    *   **Özellikler:** Entegre dokunmatik panel, dahili flaş bellek (kullanıcı arayüzü ve resimler için), GPIO kontrolü (bazı modellerde).
+    *   **Güç:** Genellikle 5V DC ile beslenir.
+
+*   **CAN Transceiver (Örn: SN65HVD230, TJA1050):**
+    *   **İşlev:** CAN protokol kontrolörü ile fiziksel CAN Bus hattı arasında arayüz sağlar. CAN sinyallerini diferansiyel sinyallere çevirir ve tersini yapar.
+    *   **Mantık Seviyesi:** Genellikle 3.3V ve 5V mantık seviyeleriyle uyumludur.
+    *   **Hız:** Yüksek hızlı CAN iletişimini destekler (Projede 500 kbit/s).
+    *   **Koruma:** Genellikle kısa devre koruması, aşırı sıcaklık koruması gibi özelliklere sahiptir.
+
+*   **Buzzer:**
+    *   **Tip:** Aktif veya Pasif Buzzer. Proje, buzzer'ı dijital pin kontrolü ile AÇIK/KAPALI durumuna getirir. Aktif buzzer veya transistörle kontrol edilen pasif buzzer için uygundur.
+    *   **Güç:** Genellikle 3.3V veya 5V ile çalışır.
+
+*   **Radar Sensör (Brigade Backsense® BS-9100 / BS-9100T):**
+    *   **Model:** BS-9100 / BS-9100T (FMCW Radar Nesne Algılama Sistemi)
+    *   **Algılama Uzunluğu:** 0.25m - 60m (İletişim kurabilen maksimum 16 nesne algılar)
+    *   **Algılama Genişliği:** 0m - 16m
+    *   **Nominal Tolerans:** ±0.25m
+    *   **Radar Işın Açısı:** Yatay 140°, Dikey 16° (sensör ön yüzeyine simetrik olarak dik)
+    *   **Mesafe Çözünürlüğü:** 0.25m
+    *   **Açılış Süresi:** ≤ 2.5 saniye (Sistemin hazır olması için güç açma)
+    *   **Eşzamanlı Algılanan Nesne Sayısı:** Sensör başına maksimum 16 nesne
+    *   **Sistem Başına Maksimum Sensör:** 8
+    *   **Çalışma Frekansı:** 77GHz (FMCW - Frekans Modülasyonlu Sürekli Dalga)
+    *   **Boyutlar:** 160 x 100 x 40 mm
+    *   **Ağırlık:** 0.34kg (kablo dahil)
+    *   **Çalışma Sıcaklığı:** -40°C ila +85°C
+    *   **IP Koruması:** IP69K (toz ve basınçlı su jetlerinden korumalı), Konnektör için IP66K, IP67
+    *   **Giriş Voltaj Aralığı:** 9 - 32 Vdc
+    *   **Giriş Akımı (sensör başına):** Tipik 0.23A @ 12Vdc / Tipik 0.12A @ 24Vdc
+    *   **CAN Bus Standardı:** CAN 2.0A Temel Çerçeve Formatı (11-bit Tanımlayıcı)
+    *   **CAN Baud Hızı:** 500 kbit/s (Sabit, yapılandırılamaz)
+    *   **CAN Algılama Mesajı ID Aralığı:** Sensör ID'sine ve nesnenin yakınlığına bağlı olarak 0x310 - 0x38F aralığında değişir. (Örn: En yakın nesne için 0x310, 0x320, ..., 0x380)
+
 ### Yazılım
 -   **Geliştirme Ortamı:** [PlatformIO IDE](https://platformio.org/) (VS Code eklentisi önerilir)
 -   **Framework:** [Arduino Framework for ESP32](https://docs.espressif.com/projects/arduino-esp32/en/latest/)
