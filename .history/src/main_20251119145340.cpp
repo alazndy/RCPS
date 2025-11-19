@@ -1,58 +1,45 @@
 /*
- * =================================================================================================
- * PROJE KİMLİĞİ
- * =================================================================================================
+ * =================================================================================
  * Proje Adı:   ESP32 & Nextion - Gelişmiş CAN BUS Radar Sistemi
- * Platform:    ESP32 (PlatformIO / Arduino IDE)
- * Versiyon:    v3.6.0 (Simülasyon Senkronize & Bellek Korumalı)
+ * ---------------------------------------------------------------------------------
+ * Versiyon:    v3.6.0 (Simulation Synced & Memory Safe)
  * Tarih:       19.11.2025
  *
- * --- SÜRÜM NOTLARI (v3.6.0) ---
- * 1. GÖRSEL MOTORU (Fixed Scale): React simülasyonundaki "Eşit Ölçekleme" mantığı birebir
- *    koda işlendi. Artık X ve Y eksenleri aynı katsayı ile ölçekleniyor, görüntü sündürülmüyor.
- * 
- * 2. DÜZELTME (Araç Çizimi): Nextion ekran genişliğini (272px) aşan araç çizimlerinin,
- *    koordinat hatası yüzünden sola yapışması engellendi. (Constrain mantığı eklendi).
- * 
- * 3. BELLEK GÜVENLİĞİ: 'String' nesneleri iletişim döngüsünden çıkarıldı. C-String (char array)
- *    kullanılarak uzun süreli çalışmalarda kilitlenme (heap fragmentation) riski sıfırlandı.
- * =================================================================================================
+ * --- v3.6.0 Değişiklikleri ---
+ * 1. SİMÜLASYON UYUMU: React/TypeScript simülasyonundaki "Fixed Scale" mantığı
+ *    birebir uyarlandı. Artık X ve Y eksenleri aynı oranda ölçekleniyor.
+ *    Görüntü sündürülmüyor.
+ * 2. ARAÇ GÖRSELİ DÜZELTMESİ: Nextion ekran genişliğini aşan araç çizimlerinin
+ *    sola kayması engellendi (Constrain eklendi).
+ * 3. GRID SİSTEMİ: Arka plan resimlerine (10m, 8m, 6m, 4m) tam uyumlu geçişler.
+ * =================================================================================
  */
 
-// -------------------------------------------------------------------------------------------------
-// 1. KÜTÜPHANELER
-// -------------------------------------------------------------------------------------------------
-#include "driver/gpio.h"       // ESP32 GPIO kontrolü için
-#include "driver/twai.h"       // ESP32 Dahili CAN Sürücüsü (MCP2515 gerekmez)
-#include <math.h>              // Matematiksel işlemler (abs, trigonometri vb.)
-#include <HardwareSerial.h>    // Nextion ile donanımsal seri haberleşme
-#include <EEPROM.h>            // Ayarların kalıcı hafızada saklanması
+#include "driver/gpio.h"
+#include "driver/twai.h"
+#include <math.h>
+#include <HardwareSerial.h>
+#include <EEPROM.h>
 
+// =================================================================================
+// DEBUG AYARLARI
+// =================================================================================
+#define DEBUG_CAN      0
+#define DEBUG_NEXTION  1
+#define DEBUG_RADAR    0 
+#define DEBUG_BUZZER   0
+#define DEBUG_EEPROM   1
 
-// -------------------------------------------------------------------------------------------------
-// 2. HATA AYIKLAMA (DEBUG) AYARLARI
-// -------------------------------------------------------------------------------------------------
-// İstenen modülün loglarını açmak için '1', kapatmak için '0' yapın.
-// Bu yöntem işlemciyi yormadan sadece gerekli bilgiyi görmenizi sağlar.
-#define DEBUG_CAN      0  // Ham CAN verilerini göster
-#define DEBUG_NEXTION  1  // Ekran komutlarını göster
-#define DEBUG_RADAR    0  // Koordinat hesaplarını göster
-#define DEBUG_BUZZER   0  // Ses durumunu göster
-#define DEBUG_EEPROM   1  // Hafıza işlemlerini göster
-
-// Derleyici Makroları (Kod optimizasyonu sağlar, kapalıysa derlemeye dahil edilmez)
 #if DEBUG_CAN == 1
   #define CAN_PRINTF(...) Serial.printf(__VA_ARGS__)
 #else
   #define CAN_PRINTF(...)
 #endif
-
 #if DEBUG_NEXTION == 1
   #define NEXTION_PRINTF(...) Serial.printf(__VA_ARGS__)
 #else
   #define NEXTION_PRINTF(...)
 #endif
-
 #if DEBUG_RADAR == 1
   #define RADAR_PRINTLN(x) Serial.println(x)
   #define RADAR_PRINTF(...) Serial.printf(__VA_ARGS__)
@@ -60,13 +47,11 @@
   #define RADAR_PRINTLN(x)
   #define RADAR_PRINTF(...)
 #endif
-
 #if DEBUG_BUZZER == 1
   #define BUZZER_PRINTLN(x) Serial.println(x)
 #else
   #define BUZZER_PRINTLN(x)
 #endif
-
 #if DEBUG_EEPROM == 1
   #define EEPROM_PRINTLN(x) Serial.println(x)
   #define EEPROM_PRINTF(...) Serial.printf(__VA_ARGS__)
@@ -75,102 +60,76 @@
   #define EEPROM_PRINTF(...)
 #endif
 
+// =================================================================================
+// DONANIM VE SABİTLER
+// =================================================================================
+#define CAN_TX_PIN GPIO_NUM_5
+#define CAN_RX_PIN GPIO_NUM_4
+#define BUZZER_PIN 25
 
-// -------------------------------------------------------------------------------------------------
-// 3. DONANIM PIN TANIMLAMALARI
-// -------------------------------------------------------------------------------------------------
-#define CAN_TX_PIN GPIO_NUM_5  // CAN Transceiver TX
-#define CAN_RX_PIN GPIO_NUM_4  // CAN Transceiver RX
-#define BUZZER_PIN 25          // Buzzer (Aktif Buzzer önerilir)
+const long SERIAL_MONITOR_BAUD = 115200;
+const long NEXTION_BAUD = 9600;
+const int  RX_BUFFER_SIZE = 64;
 
-
-// -------------------------------------------------------------------------------------------------
-// 4. SİSTEM SABİTLERİ VE AYARLAR
-// -------------------------------------------------------------------------------------------------
-const long SERIAL_MONITOR_BAUD = 115200; // PC bağlantı hızı
-const long NEXTION_BAUD        = 9600;   // Ekran bağlantı hızı
-const int  RX_BUFFER_SIZE      = 64;     // Nextion'dan gelen veri için güvenli tampon boyutu
-
-// --- EEPROM Adres Haritası ---
+// --- EEPROM ---
 #define EEPROM_SIZE 64
-const int EEPROM_MAGIC_KEY    = 124; // Hafızanın bozulup bozulmadığını anlamak için anahtar
-const int ADDR_MAGIC_KEY      = 0;
-const int ADDR_WARN_ZONE      = 4;
-const int ADDR_DANGER_ZONE    = 8;
-const int ADDR_VEHICLE_WIDTH  = 12;
-const int ADDR_PASSWORD       = 16;
-const int ADDR_LATERAL_L1     = 28; // (Not: v3.6.0'da bu değerler sabittir, uyumluluk için tutuluyor)
-const int ADDR_LATERAL_L2     = 32;
-const int ADDR_LATERAL_L3     = 36;
-const int ADDR_LATERAL_L4     = 40;
-const int ADDR_AUTOZOOM_EN    = 44;
-const int ADDR_AUDIOALARM_EN  = 45;
-const int ADDR_SIDE_MARGIN    = 48;
-const int ADDR_MAX_WIDTH      = 52;
+const int EEPROM_MAGIC_KEY = 124;
+const int ADDR_MAGIC_KEY = 0, ADDR_WARN_ZONE = 4, ADDR_DANGER_ZONE = 8, ADDR_VEHICLE_WIDTH = 12, ADDR_PASSWORD = 16;
+const int ADDR_LATERAL_L1 = 28, ADDR_LATERAL_L2 = 32, ADDR_LATERAL_L3 = 36, ADDR_LATERAL_L4 = 40;
+const int ADDR_AUTOZOOM_EN = 44, ADDR_AUDIOALARM_EN = 45;
+const int ADDR_SIDE_MARGIN = 48, ADDR_MAX_WIDTH = 52;
 
-// --- Varsayılan Fabrika Ayarları ---
-const float DEFAULT_WARNING_ZONE_M    = 5.0;
-const float DEFAULT_DANGER_ZONE_M     = 2.0;
-const float DEFAULT_VEHICLE_WIDTH_M   = 2.0; 
-const char  DEFAULT_PASSWORD[]        = "1234";
-const float DEFAULT_SIDE_MARGIN_M     = 0.5;
-const float DEFAULT_MAX_WIDTH_M       = 10.0;
-const bool  DEFAULT_AUTOZOOM_EN       = true;
-const bool  DEFAULT_AUDIOALARM_EN     = true;
-// Uyumluluk için varsayılanlar
+// --- Varsayılanlar ---
+const float DEFAULT_WARNING_ZONE_M = 5.0;
+const float DEFAULT_DANGER_ZONE_M = 2.0;
+const float DEFAULT_VEHICLE_WIDTH_M = 2.0; // Standart binek araç
+const char  DEFAULT_PASSWORD[] = "1234";
+// (Lateral Range ayarları artık sabit 10/8/6/4 mantığına geçtiği için EEPROM'daki bu değerler override edilecek)
 const float DEFAULT_LATERAL_L1 = 10.0, DEFAULT_LATERAL_L2 = 8.0, DEFAULT_LATERAL_L3 = 6.0, DEFAULT_LATERAL_L4 = 4.0;
+const bool  DEFAULT_AUTOZOOM_EN = true, DEFAULT_AUDIOALARM_EN = true;
+const float DEFAULT_SIDE_MARGIN_M = 0.5, DEFAULT_MAX_WIDTH_M = 10.0;
 
-// --- Ekran Fiziksel Özellikleri ---
-const int   SCREEN_WIDTH_PX       = 272;
-const int   SCREEN_HEIGHT_PX      = 480;
-const int   TARGET_OBJECT_SIZE_PX = 30; // Hedef kare boyutu
-const int   VEHICLE_HEIGHT_PX     = 10; // Araç temsili çizgisinin kalınlığı
-const int   VEHICLE_COLOR         = 31; // Nextion Renk Kodu (Mavi)
-
-// --- Nextion Resim ID'leri (Simülasyon Gridlerine Uygun) ---
-const int PIC_ID_SAFE    = 4;  // Grid Genişliği: 10m
-const int PIC_ID_WARNING = 1;  // Grid Genişliği: 8m
-const int PIC_ID_DANGER  = 2;  // Grid Genişliği: 6m
-const int PIC_ID_ALARM   = 0;  // Grid Genişliği: 4m
-
-// --- Nextion Renk Kodları ---
-const int COLOR_RED      = 63488;
-const int COLOR_ORANGE   = 64512;
-const int COLOR_YELLOW   = 65504;
-const int COLOR_GREEN    = 2016;
-
-// --- Buzzer Zamanlamaları ---
-const float SOLID_TONE_DISTANCE_M   = 0.75; // Sürekli ötme mesafesi
-const int   BEEP_ON_DURATION_MS     = 60;   // Bip sesinin uzunluğu
-const int   BEEP_INTERVAL_YELLOW_MS = 400;
-const int   BEEP_INTERVAL_ORANGE_MS = 200;
-const int   BEEP_INTERVAL_RED_MS    = 80;
-
-
-// -------------------------------------------------------------------------------------------------
-// 5. GLOBAL DEĞİŞKENLER VE NESNELER
-// -------------------------------------------------------------------------------------------------
-HardwareSerial SerialNextion(2); // UART2 üzerinden Nextion
-bool targetVisible = false;      // Ekranda aktif bir hedef var mı?
-char rxBuffer[RX_BUFFER_SIZE];   // İletişim tamponu (String yerine char array)
-
-// Çalışma Zamanı Ayarları (EEPROM'dan yüklenir)
+// --- Global Değişkenler ---
 float warningZone_m, dangerZone_m, vehicleRealWidth_m;
 char  password[10];
-float lateralRange_L1, lateralRange_L2, lateralRange_L3, lateralRange_L4;
+float lateralRange_L1, lateralRange_L2, lateralRange_L3, lateralRange_L4; // Uyumluluk için tutuyoruz
 bool  autoZoom_enabled, audioAlarm_enabled;
 float sideMargin_m, maxWidth_m;
 
-// Buzzer Durum Değişkenleri
+// --- Ekran Ayarları ---
+const int   SCREEN_WIDTH_PX = 272;
+const int   SCREEN_HEIGHT_PX = 480;
+const int   TARGET_OBJECT_SIZE_PX = 30; // Hedef kutucuk boyutu
+const int   VEHICLE_HEIGHT_PX = 10;
+const int   VEHICLE_COLOR = 31; 
+
+// Nextion Resim ID'leri
+const int PIC_ID_SAFE = 4;    // 10m Genişlik
+const int PIC_ID_WARNING = 1; // 8m Genişlik
+const int PIC_ID_DANGER = 2;  // 6m Genişlik
+const int PIC_ID_ALARM = 0;   // 4m Genişlik
+const int COLOR_RED = 63488, COLOR_ORANGE = 64512, COLOR_YELLOW = 65504, COLOR_GREEN = 2016;
+
+// --- Buzzer ---
+const float SOLID_TONE_DISTANCE_M = 0.75;
+const int   BEEP_ON_DURATION_MS = 60;
+const int   BEEP_INTERVAL_YELLOW_MS = 400;
+const int   BEEP_INTERVAL_ORANGE_MS = 200;
+const int   BEEP_INTERVAL_RED_MS = 80;
+
+// =================================================================================
+// GLOBAL NESNELER
+// =================================================================================
+HardwareSerial SerialNextion(2);
+bool targetVisible = false;
+char rxBuffer[RX_BUFFER_SIZE]; 
+
 bool buzzerShouldBeActive = false;
 bool buzzerIsOn           = false;
 unsigned long lastBuzzerToggleTime = 0;
 int  currentBeepInterval  = BEEP_INTERVAL_YELLOW_MS;
 
-
-// -------------------------------------------------------------------------------------------------
-// 6. FONKSİYON PROTOTİPLERİ (Ön Bildirimler)
-// -------------------------------------------------------------------------------------------------
+// --- Prototip ---
 void sendCommand(String cmd);
 void loadSettingsFromEEPROM();
 void saveSettingsToEEPROM();
@@ -178,22 +137,20 @@ void resetToDefaults();
 void handleNextionInput();
 void handleDetection(const twai_message_t& msg);
 void clearDetection();
-void updateVehicleDisplay(float currentMaxGridXMeters);
+void updateVehicleDisplay(float currentMaxGridXMeters); // İmzası değişti
 void updateTargetDisplay(int x, int y, int color);
 void updateTextDisplays(float radius, int angle, float x_m, float y_m);
 void sendSettingsToNextion();
 void handleBuzzer();
 
 
-// -------------------------------------------------------------------------------------------------
-// 7. ANA KURULUM (SETUP)
-// -------------------------------------------------------------------------------------------------
+// =================================================================================
+// SETUP & LOOP
+// =================================================================================
 void setup() {
-  // A. Pin Ayarları
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
   
-  // B. Seri Haberleşme Başlatma
   Serial.begin(SERIAL_MONITOR_BAUD);
   SerialNextion.begin(NEXTION_BAUD, SERIAL_8N1, 16, 17);
   
@@ -201,65 +158,49 @@ void setup() {
   Serial.println("   ESP32 RADAR SİSTEMİ - v3.6.0 (Simülasyon Senkronize)");
   Serial.println("======================================================");
 
-  // C. Hafızadan Ayarları Oku
   loadSettingsFromEEPROM();
 
-  // D. CAN BUS (TWAI) Kurulumu
   twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)CAN_TX_PIN, (gpio_num_t)CAN_RX_PIN, TWAI_MODE_NORMAL);
-  twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS(); // Radar iletişim hızı
-  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL(); // Tüm mesajları dinle
+  twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
+  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
   
-  // CAN Başlatma Kontrolü
   if (twai_driver_install(&g_config, &t_config, &f_config) != ESP_OK || twai_start() != ESP_OK) {
-    Serial.println("[HATA] CAN Sürücüsü Başlatılamadı! Kablolamayı kontrol edin.");
-    while(1); // Hata durumunda sonsuz döngüde bekle
+    Serial.println("[HATA] CAN Sürücüsü Başlatılamadı!");
+    while(1);
   }
 
-  Serial.println("[INFO] Sistem hazır, CAN BUS dinleniyor...");
-  clearDetection(); // Ekranı temizleyerek başla
+  Serial.println("[INFO] CAN BUS dinleniyor...");
+  clearDetection();
 }
 
-
-// -------------------------------------------------------------------------------------------------
-// 8. ANA DÖNGÜ (LOOP)
-// -------------------------------------------------------------------------------------------------
 void loop() {
-  // 1. Adım: Nextion'dan gelen dokunmatik verileri kontrol et
   handleNextionInput();
 
-  // 2. Adım: CAN BUS üzerinden radar verisi kontrol et
   twai_message_t message;
   bool detectionThisCycle = false;
   
-  // 50ms zaman aşımı ile mesaj bekle
   if (twai_receive(&message, pdMS_TO_TICKS(50)) == ESP_OK) {
-    
-    // Sadece Radar ID aralığını işle (Örn: 0x310 - 0x38F)
+    // CAN ID Filtresi (Radar için)
     if (message.identifier >= 0x310 && message.identifier <= 0x38F) {
-      
-      // Continental Radar Geçerlilik Kontrolü (7. Byte'ın son biti)
       bool validDetection = !(message.data[7] & 0b00000001); 
-      
       if (validDetection) {
         detectionThisCycle = true;
-        handleDetection(message); // Ana radar mantığını çalıştır
+        handleDetection(message);
       }
     }
   }
 
-  // 3. Adım: Eğer bu döngüde hedef yoksa ve ekranda eski hedef kalmışsa temizle
   if (!detectionThisCycle && targetVisible) {
     clearDetection();
   }
 
-  // 4. Adım: Buzzer'ı kontrol et (Bloklamadan çalışır)
   handleBuzzer();
 }
 
 
-// -------------------------------------------------------------------------------------------------
-// 9. İLETİŞİM VE AYRIŞTIRMA (Parsing)
-// -------------------------------------------------------------------------------------------------
+// =================================================================================
+// İLETİŞİM
+// =================================================================================
 void sendCommand(String cmd) {
   SerialNextion.print(cmd);
   SerialNextion.write(0xFF);
@@ -269,21 +210,16 @@ void sendCommand(String cmd) {
 
 void handleNextionInput() {
   if (SerialNextion.available()) {
-    // Veriyi "Buffer"a oku (Bellek güvenliği için String yerine char array)
     int bytesRead = SerialNextion.readBytesUntil((char)0xFF, rxBuffer, RX_BUFFER_SIZE - 1);
-    rxBuffer[bytesRead] = '\0'; // C-String sonlandırıcı
+    rxBuffer[bytesRead] = '\0';
 
-    // Kalan 0xFF karakterlerini temizle
     while(SerialNextion.available() && SerialNextion.peek() == 0xFF) {
       SerialNextion.read();
     }
 
     if (bytesRead == 0) return;
-    NEXTION_PRINTF("\n[NEXTION] Gelen Komut: \"%s\"\n", rxBuffer);
+    NEXTION_PRINTF("\n[NEXTION] Rx: \"%s\"\n", rxBuffer);
 
-    // --- KOMUT İŞLEME (C Fonksiyonları ile) ---
-    
-    // Şifre Girişi
     if (strncmp(rxBuffer, "LOGIN:", 6) == 0) {
       if (strcmp(rxBuffer + 6, password) == 0) {
         sendSettingsToNextion();
@@ -293,7 +229,6 @@ void handleNextionInput() {
         sendCommand("login_fail.val=1");
       }
     }
-    // Şifre Değiştirme
     else if (strncmp(rxBuffer, "SETPASS:", 8) == 0) {
       char* newPass = rxBuffer + 8;
       if (strlen(newPass) > 0 && strlen(newPass) < 10) {
@@ -301,18 +236,16 @@ void handleNextionInput() {
         saveSettingsToEEPROM();
       }
     }
-    // Bölge Ayarları Kaydı
     else if (strncmp(rxBuffer, "SAVE1:", 6) == 0) {
       char* ptr = rxBuffer + 6;
       char* val1 = strtok(ptr, ",");
       char* val2 = strtok(NULL, ",");
       if (val1 && val2) {
-        warningZone_m = atof(val1) / 10.0; // Nextion 10 katı gönderir, 10'a bölüyoruz
+        warningZone_m = atof(val1) / 10.0;
         dangerZone_m = atof(val2) / 10.0;
         saveSettingsToEEPROM();
       }
     }
-    // Araç Ayarları Kaydı
     else if (strncmp(rxBuffer, "SAVE2:", 6) == 0) {
       char* ptr = rxBuffer + 6;
       char* vMargin = strtok(ptr, ",");
@@ -325,7 +258,6 @@ void handleNextionInput() {
         saveSettingsToEEPROM();
       }
     }
-    // Seçenekler Kaydı
     else if (strncmp(rxBuffer, "SAVE3:", 6) == 0) {
       char* ptr = rxBuffer + 6;
       char* vZoom = strtok(ptr, ",");
@@ -336,7 +268,6 @@ void handleNextionInput() {
         saveSettingsToEEPROM();
       }
     }
-    // Fabrika Ayarlarına Dönüş
     else if (strcmp(rxBuffer, "RESETALL") == 0) {
       resetToDefaults();
     }
@@ -344,22 +275,23 @@ void handleNextionInput() {
 }
 
 
-// -------------------------------------------------------------------------------------------------
-// 10. RADAR HESAPLAMA VE GÖRSELLEŞTİRME MOTORU (CORE)
-// -------------------------------------------------------------------------------------------------
+// =================================================================================
+// RADAR MANTIĞI (v3.6.0 GÜNCELLEMELERİ BURADA)
+// =================================================================================
+
 void handleDetection(const twai_message_t& msg) {
-  RADAR_PRINTLN("\n--- [RADAR] HEDEF SAPTANDI ---");
+  RADAR_PRINTLN("\n--- [RADAR] TESPİT ---");
   
-  // A. Ham Veriyi Fiziksel Birime Çevirme (Radar Protokolü)
+  // 1. Ham Veriyi Çevirme
   float polarRadius_m = msg.data[0] * 0.25;
   int   polarAngle_deg = (int)msg.data[1] - 128;
-  float doc_x_m = msg.data[2] * 0.25;             // Simülasyondaki Y ekseni (İleri)
-  float doc_y_m = ((int)msg.data[3] - 128) * 0.25;// Simülasyondaki X ekseni (Yanal)
+  float doc_x_m = msg.data[2] * 0.25;             // İleri (Simülasyon Y)
+  float doc_y_m = ((int)msg.data[3] - 128) * 0.25;// Yanal (Simülasyon X)
   
-  RADAR_PRINTF("  [DATA] Mesafe:%.2fm, X(İleri):%.2fm, Y(Yanal):%.2fm\n", polarRadius_m, doc_x_m, doc_y_m);
+  RADAR_PRINTF("  [DATA] R:%.2f, X:%.2f, Y:%.2f\n", polarRadius_m, doc_x_m, doc_y_m);
 
-  // B. Otomatik Zoom ve Grid Genişliği Belirleme
-  // React Simülasyonu ile aynı mantık: 10m -> 8m -> 6m -> 4m kademeleri
+  // 2. Grid ve Zoom Ayarı (Simülasyon ile birebir)
+  // Kurallar: >5m -> 10m, 3-5m -> 8m, 1.5-3m -> 6m, <1.5m -> 4m
   float currentMaxGridXMeters; 
   int backgroundPicId, targetColor;
 
@@ -382,37 +314,32 @@ void handleDetection(const twai_message_t& msg) {
           targetColor = COLOR_RED; 
       }
   } else {
-      // Zoom kapalıysa sabit en geniş açı (10m)
+      // Zoom kapalıysa en geniş açı
       currentMaxGridXMeters = 10.0;
       if (polarRadius_m > warningZone_m) { backgroundPicId = PIC_ID_SAFE; targetColor = COLOR_GREEN; }
       else if (polarRadius_m > dangerZone_m) { backgroundPicId = PIC_ID_WARNING; targetColor = COLOR_YELLOW; }
       else { backgroundPicId = PIC_ID_ALARM; targetColor = COLOR_RED; }
   }
 
-  // C. EŞİT ÖLÇEKLEME (Fixed Scale / Uniform Scaling)
-  // Simülasyondaki gibi, 1 metre hem yatayda hem dikeyde aynı piksel sayısına denk gelir.
-  // Görüntünün sündürülmesini engeller.
+  // 3. Eşit Ölçekleme (Fixed Scale / Uniform Scaling)
+  // Hem X hem Y ekseni için aynı katsayı kullanılır.
   float fixedScale = (float)SCREEN_WIDTH_PX / currentMaxGridXMeters;
 
-  // D. Koordinat Haritalama (Metreden Piksele)
+  // 4. Koordinat Haritalama (Simülasyon Mantığı)
   
-  // X EKSENİ (YANAL):
-  // Formül: (YanalMesafe + (GridGenişliği / 2)) * Ölçek
+  // X EKSENİ (YANAL): (Yanal_Mesafe + (ToplamGenişlik / 2)) * Ölçek
   float targetX_float = (doc_y_m + (currentMaxGridXMeters / 2.0)) * fixedScale;
   int targetX_px = (int)(targetX_float + 0.5);
 
-  // Y EKSENİ (İLERİ):
-  // Formül: EkranBoyu - (İleriMesafe * Ölçek)
+  // Y EKSENİ (İLERİ): EkranBoyu - (İleri_Mesafe * Ölçek)
   float targetY_float = (float)SCREEN_HEIGHT_PX - (doc_x_m * fixedScale);
   int targetY_px = (int)(targetY_float + 0.5);
 
-  // E. Sınırlandırma (Constrain)
-  // Hedefin ekran dışına çıkıp çizimi bozmasını engelle
+  // 5. Sınırlandırma (Ekranda kalması için)
   targetX_px = constrain(targetX_px, 0, SCREEN_WIDTH_PX - TARGET_OBJECT_SIZE_PX);
   targetY_px = constrain(targetY_px, 0, SCREEN_HEIGHT_PX - TARGET_OBJECT_SIZE_PX);
 
-  // F. Buzzer (Sesli İkaz) Mantığı
-  // Sadece araç genişliği + güvenlik payı içindeki cisimlere öter
+  // 6. Buzzer Mantığı
   if (audioAlarm_enabled && (polarRadius_m < warningZone_m) && (abs(doc_y_m) < (vehicleRealWidth_m / 2.0 + sideMargin_m))) {
     buzzerShouldBeActive = true;
     if (polarRadius_m <= SOLID_TONE_DISTANCE_M) currentBeepInterval = 0;
@@ -423,43 +350,39 @@ void handleDetection(const twai_message_t& msg) {
     buzzerShouldBeActive = false;
   }
 
-  // G. Ekran Güncelleme
+  // 7. Ekran Güncelleme
   sendCommand("page0.pic=" + String(backgroundPicId));
-  // Not: Araç genişliğini de aynı 'fixedScale' ile hesaplaması için grid bilgisini gönderiyoruz
+  // Yeni fonksiyona 'grid genişliğini' gönderiyoruz, ölçeği kendi hesaplıyor
   updateVehicleDisplay(currentMaxGridXMeters); 
   updateTargetDisplay(targetX_px, targetY_px, targetColor);
   updateTextDisplays(polarRadius_m, polarAngle_deg, doc_y_m, doc_x_m);
 }
 
 void updateVehicleDisplay(float currentMaxGridXMeters) {
-  // Sıfıra bölünme koruması
+  // Güvenlik
   if (currentMaxGridXMeters < 0.1) currentMaxGridXMeters = 10.0;
   
-  // Aynı ölçeği (Fixed Scale) burada da kullanıyoruz
+  // Aynı ölçeği burada da hesapla
   float fixedScale = (float)SCREEN_WIDTH_PX / currentMaxGridXMeters;
   
   // Araç genişliğini piksel cinsinden hesapla
   int vehicle_width_px = (int)((vehicleRealWidth_m * fixedScale) + 0.5);
 
-  // --- KRİTİK DÜZELTME (Araç Genişliği Sınırı) ---
-  // Eğer zoom çok artarsa (örn. 4m modunda) ve araç genişse (2.5m),
-  // hesaplanan piksel ekranı taşabilir. Nextion ekran boyutundan büyük
-  // genişlikleri çizemediği için koordinatlar şaşar.
+  // --- DÜZELTME: Araç ekrandan taşarsa genişliği sınırla ---
   if (vehicle_width_px > SCREEN_WIDTH_PX) {
     vehicle_width_px = SCREEN_WIDTH_PX;
   }
-  // Minimum görünürlük sınırı
   if (vehicle_width_px < 2) {
     vehicle_width_px = 2;
   }
 
-  // Aracı ekranda ortala
+  // Aracı ortalamak için X konumunu hesapla
   int vehicle_x_px = (int)(((float)SCREEN_WIDTH_PX - vehicle_width_px) / 2.0 + 0.5);
   
-  // Negatif koordinat koruması
+  // Negatif olmasını engelle
   if (vehicle_x_px < 0) vehicle_x_px = 0;
 
-  // Nextion'a Gönder
+  // Verileri Gönder
   sendCommand("rVehicle.x=" + String(vehicle_x_px));
   sendCommand("rVehicle.w=" + String(vehicle_width_px));
   sendCommand("rVehicle.y=" + String(SCREEN_HEIGHT_PX - VEHICLE_HEIGHT_PX));
@@ -471,14 +394,12 @@ void clearDetection() {
   targetVisible = false;
   buzzerShouldBeActive = false; 
   
-  // Hedefi gizle, arka planı güvenli moda al
   sendCommand("vis rTarget,0");
   sendCommand("page0.pic=" + String(PIC_ID_SAFE));
   
-  // Araç genişliğini varsayılan 10m görünümüne sıfırla
+  // Temizlendiğinde varsayılan olarak en geniş açıyı (10m) göster
   updateVehicleDisplay(10.0);
   
-  // Metinleri temizle
   sendCommand("tDurum.txt=\"Temiz\"");
   sendCommand("tMesafe.txt=\"--\"");
   sendCommand("tAci.txt=\"--\"");
@@ -487,12 +408,10 @@ void clearDetection() {
 }
 
 void updateTargetDisplay(int x, int y, int color) {
-  // Hedef daha önce gizliyse görünür yap
   if (!targetVisible) {
     sendCommand("vis rTarget,1");
     targetVisible = true;
   }
-  // Konum ve renk güncelle
   sendCommand("rTarget.pco=" + String(color));
   sendCommand("rTarget.x=" + String(x));
   sendCommand("rTarget.y=" + String(y));
@@ -507,7 +426,6 @@ void updateTextDisplays(float radius, int angle, float x_m, float y_m) {
 }
 
 void handleBuzzer() {
-  // Eğer buzzer pasifse ve açıksa, hemen kapat
   if (!buzzerShouldBeActive) {
     if (buzzerIsOn) {
       digitalWrite(BUZZER_PIN, LOW);
@@ -515,10 +433,7 @@ void handleBuzzer() {
     }
     return;
   }
-
   unsigned long currentTime = millis();
-
-  // Sürekli Ses (Kritik Yakınlık)
   if (currentBeepInterval == 0) {
     if (!buzzerIsOn) {
       digitalWrite(BUZZER_PIN, HIGH);
@@ -526,17 +441,13 @@ void handleBuzzer() {
     }
     return;
   }
-
-  // Kesikli Ses (Non-Blocking Delay)
   if (buzzerIsOn) {
-    // Bip süresi dolduysa sustur
     if (currentTime - lastBuzzerToggleTime >= BEEP_ON_DURATION_MS) {
       digitalWrite(BUZZER_PIN, LOW);
       buzzerIsOn = false;
       lastBuzzerToggleTime = currentTime;
     }
   } else {
-    // Bekleme süresi dolduysa tekrar öttür
     if (currentTime - lastBuzzerToggleTime >= currentBeepInterval) {
       digitalWrite(BUZZER_PIN, HIGH);
       buzzerIsOn = true;
@@ -546,12 +457,11 @@ void handleBuzzer() {
 }
 
 
-// -------------------------------------------------------------------------------------------------
-// 11. EEPROM (KALICI HAFIZA) YÖNETİMİ
-// -------------------------------------------------------------------------------------------------
+// =================================================================================
+// EEPROM FONKSİYONLARI
+// =================================================================================
 void loadSettingsFromEEPROM() {
   EEPROM.begin(EEPROM_SIZE);
-  // Magic Key kontrolü ile hafızanın boş olup olmadığını anla
   if (EEPROM.read(ADDR_MAGIC_KEY) != EEPROM_MAGIC_KEY) {
     resetToDefaults();
   } else {
@@ -563,6 +473,7 @@ void loadSettingsFromEEPROM() {
     EEPROM.get(ADDR_AUDIOALARM_EN, audioAlarm_enabled);
     EEPROM.get(ADDR_SIDE_MARGIN, sideMargin_m);
     EEPROM.get(ADDR_MAX_WIDTH, maxWidth_m);
+    // Lateral değerler artık kod içinde sabit (10/8/6/4) ama EEPROM yapısını bozmuyoruz
     EEPROM.get(ADDR_LATERAL_L1, lateralRange_L1);
     EEPROM.get(ADDR_LATERAL_L2, lateralRange_L2);
     EEPROM.get(ADDR_LATERAL_L3, lateralRange_L3);
@@ -585,7 +496,7 @@ void saveSettingsToEEPROM() {
   EEPROM.put(ADDR_LATERAL_L2, lateralRange_L2);
   EEPROM.put(ADDR_LATERAL_L3, lateralRange_L3);
   EEPROM.put(ADDR_LATERAL_L4, lateralRange_L4);
-  EEPROM.commit(); // Veriyi fiziksel olarak yaz
+  EEPROM.commit();
 }
 
 void resetToDefaults() {
@@ -605,7 +516,6 @@ void resetToDefaults() {
 }
 
 void sendSettingsToNextion() {
-  // Nextion tam sayı (integer) çalıştığı için değerleri 10 ile çarpıp gönderiyoruz
   sendCommand("pageSet1.h0.val=" + String((int)(warningZone_m * 10)));
   sendCommand("pageSet1.h1.val=" + String((int)(dangerZone_m * 10)));
   sendCommand("pageSet2.h0.val=" + String((int)(sideMargin_m * 10)));
