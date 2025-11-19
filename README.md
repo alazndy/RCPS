@@ -1,3 +1,4 @@
+## RCPS Radar Collision Prevention System
 # ESP32 & Nextion - Gelişmiş CAN BUS Radar Sistemi
 
 Bu proje, bir ESP32 mikrodenetleyici kullanarak bir CAN BUS radarından gelen verileri işleyen ve sonuçları bir Nextion HMI ekranda görselleştiren gelişmiş bir radar sistemidir. Sistem, hedefleri mesafelerine ve konumlarına göre sınıflandırır, görsel ve sesli uyarılar üretir ve kullanıcı tarafından yapılandırılabilir ayarlara sahiptir.
